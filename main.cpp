@@ -1,11 +1,10 @@
+#include <SFML/System.hpp>
 #include <SFML/Graphics.hpp>
 #include <SFML/OpenGL.hpp>
 #include <vector>
 #include <iostream>
 #include<math.h>
 
-#define FPS 60
-#define DT (1.0f/FPS)
 #define SUB_STEPS 8
 
 
@@ -72,31 +71,36 @@ void solveCollisions(std::vector<PhysicalObject>& objects) {
             float distance = sqrt(pow(objects[i].position.x - objects[j].position.x, 2) + pow(objects[i].position.y - objects[j].position.y, 2));
             if (distance < objects[i].radius + objects[j].radius) {
                 sf::Vector2f normal = (objects[i].position - objects[j].position) / distance;
-                sf::Vector2f impulse = normal * (objects[i].radius + objects[j].radius - distance) * 0.5f;
-                objects[i].applyImpulse(impulse); objects[j].applyImpulse(-impulse);
+                sf::Vector2f delta = normal * (objects[i].radius + objects[j].radius - distance) * 0.5f;
+                objects[i].position += delta; objects[j].position -= delta;
             }
     }
 }
 
 int main() {
+    sf::Clock clock;
     sf::RenderWindow window(sf::VideoMode(1000, 1000), "pure chaos");
-    window.setFramerateLimit(FPS); // window.setMouseCursorVisible(false);
+    //window.setFramerateLimit(FPS); // window.setMouseCursorVisible(false);
     std::vector<PhysicalObject> objects;
     for (int i = 0; i < 4; i++) for (int j = 0; j < 4; j++) objects.push_back(PhysicalObject(250 + i*20, 250 + j*20, 9));
     sf::CircleShape boundary(400, 500); boundary.setPosition(100, 100); boundary.setFillColor(sf::Color(100, 100, 100));
-
+    bool spacepressed = false;
     while (window.isOpen()) {
         sf::Event event;
         while (window.pollEvent(event))
             if (event.type == sf::Event::Closed || (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Escape)) window.close();
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space)) objects.push_back(PhysicalObject(rand() % 1000, rand() % 1000, rand() % 100 + 10, false));
-        
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space) && !spacepressed) {
+            objects.push_back(PhysicalObject(rand() % 1000, rand() % 1000, rand() % 100 + 10, false));
+            spacepressed = true;
+        } else if (!sf::Keyboard::isKeyPressed(sf::Keyboard::Space)) spacepressed = false;
+
+       float dt = clock.restart().asSeconds();
         for (int i = 0; i < SUB_STEPS; i++) {
-            applyConstraint(objects); solveCollisions(objects);
-            for (int i = 0; i < objects.size(); i++) {
-                objects[i].applyAcceleration(0, 1000);
-                objects[i].updateObject(DT/SUB_STEPS);
+            for (int j = 0; j < objects.size(); j++) {
+                objects[j].applyAcceleration(0, 100);
+                objects[j].updateObject(dt/SUB_STEPS);
             }
+            applyConstraint(objects); solveCollisions(objects);
         }
         window.clear();
         window.draw(boundary);
