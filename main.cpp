@@ -9,26 +9,27 @@
 #define SUB_STEPS 8
 
 const std::vector<sf::Color> colors = {sf::Color::White, sf::Color::Red, sf::Color::Green, sf::Color::Blue};
+enum {CIRCLE, BOX, POLYGON};
 
-struct PhysicalObject : public sf::Drawable {
-    PhysicalObject(float x, float y, float radius, float mass = 0.f, bool is_static = false, int8_t group = 0) {
+struct PObject {
+    PObject(float x, float y, float mass = 1.f, bool is_static = false, int8_t group = 0) {
         this->position.x = x; this->position.y = y;
 		this->position_old = this->position;
-        this->radius = radius; this->is_static = is_static;
-        this->mass = mass + (mass == 0.f)*radius*radius*PI;
-        this->group = group;
-        // this->elasticity = elasticity; this->friction = friction;
+        this->is_static = is_static;
+        this->mass = mass;
+        this->group = rand()%4;
         this->velocity.x = 0; this->velocity.y = 0;
         this->acceleration.x = 0; this->acceleration.y = 0;
         this->angularVelocity = 0; this->angularAcceleration = 0;
-    } //virtual ~PhysicalObject();
+    } // virtual ~PhysicalObject();
     
-    float radius, mass; // elasticity, friction;
     sf::Vector2f position, position_old, velocity, acceleration;
-    float rotation, angularVelocity, angularAcceleration;
+    float mass, rotation, angularVelocity, angularAcceleration;
     bool is_static;
     int8_t group;
-    
+
+    virtual int getType() = 0;
+    virtual void draw(sf::RenderTarget& target, sf::RenderStates states) const {}
     void applyAcceleration(float x, float y) {acceleration.x += x; acceleration.y += y;}
     void applyAcceleration(sf::Vector2f acceleration) {this->acceleration += acceleration;}
     
@@ -37,12 +38,12 @@ struct PhysicalObject : public sf::Drawable {
 			updatePosition(dt);
 			// updateRotation(dt);
 		}
-}
+    }
     void updatePosition(float dt) {
         if (is_static) return;
 		position_old = position;
 		velocity += acceleration*dt;
-		position += velocity*dt;
+	    position += velocity*dt;
 		acceleration = sf::Vector2f(0, 0);
     }
     void updateRotation(float dt) {
@@ -50,24 +51,67 @@ struct PhysicalObject : public sf::Drawable {
         if (rotation > 360) rotation -= 360; if (rotation < 0) rotation += 360;
         angularAcceleration = 0;
     }
+};
 
-    void draw(sf::RenderTarget& target, sf::RenderStates states = sf::RenderStates::Default) const {
-        states.transform *= getTransform(); states.texture = NULL;
-        target.draw(sf::CircleShape(radius), states);
-    }
-    sf::Transform getTransform() const {
-        sf::Transform transform;
-        return transform.translate(position - sf::Vector2f(radius, radius)).rotate(rotation);
+struct PCircle : public PObject {
+    PCircle (float x, float y, float radius, float mass = 1.f, bool is_static = false, int8_t group = 0) :
+    PObject(x, y, mass, is_static, group) {this->radius = radius;}
+    float radius;
+    int getType() {return CIRCLE;}
+    void draw(sf::RenderTarget& target, sf::RenderStates states) const {
+        sf::CircleShape circle(radius);
+        circle.setOrigin(radius, radius);
+        circle.setPosition(position.x, position.y);
+        circle.setFillColor(colors[group]);
+        target.draw(circle, states);
     }
 };
 
+struct PBox : public PObject {
+    PBox(float x, float y, float width, float height, float mass = 0.f, bool is_static = false, int8_t group = 0) :
+    PObject(x, y, mass, is_static, group) {this->width = width; this->height = height;}
+    float width, height;
+    int getType() {return BOX;}
+    void draw(sf::RenderTarget& target, sf::RenderStates states) const {
+        sf::RectangleShape box(sf::Vector2f(width, height));
+        box.setPosition(position.x, position.y);
+        box.setFillColor(colors[group]);
+        target.draw(box);
+    }
+};
+
+// struct PPolygon : public PObject {
+//     PPolygon(float x, float y, float radius, int sides, float mass = 0.f, bool is_static = false, int8_t group = 0) :
+//     PObject(x, y, mass, is_static, group) {
+//         this->radius = radius;
+//         this->sides = sides;
+//         this->angle = 2*PI/sides;
+//         this->vertices.resize(sides);
+//         for (int i = 0; i < sides; i++) {
+//             vertices[i].x = radius * cos(i*angle);
+//             vertices[i].y = radius * sin(i*angle);
+//         }
+//     }
+//     float radius, angle;
+//     int sides;
+//     std::vector<sf::Vector2f> vertices;
+//     void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
+//         sf::ConvexShape polygon(sides);
+//         polygon.setPosition(position.x, position.y);
+//         polygon.setFillColor(colors[group]);
+//         polygon.setPoint(0, vertices[0]);
+//         for (int i = 1; i < sides; i++) polygon.setPoint(i, vertices[i]);
+//         target.draw(polygon);
+//     }
+// };
+
 struct Spring : sf::Drawable {
-    Spring(PhysicalObject* a, PhysicalObject* b, float spring_constant, float damping_constant) {
+    Spring(PObject* a, PObject* b, float spring_constant, float damping_constant) {
         this->a = a; this->b = b;
         this->spring_constant = spring_constant;
         this->damping_constant = damping_constant;
     }
-    PhysicalObject* a; PhysicalObject* b;
+    PObject* a; PObject* b;
     float spring_constant, damping_constant;
 
     void draw(sf::RenderTarget& target, sf::RenderStates states = sf::RenderStates::Default) const {
@@ -76,110 +120,69 @@ struct Spring : sf::Drawable {
         line[0].color = colors[a->group]; line[1].color = colors[b->group];
         target.draw(line, states);
     }
+    
+    void updateSpring(float dt) {
+        sf::Vector2f delta = b->position - a->position;
+        float distance = sqrt(delta.x*delta.x + delta.y*delta.y);
+        float force = spring_constant*distance;
+        sf::Vector2f force_vector = force*delta/distance;
+        a->applyAcceleration(-force_vector/a->mass);
+        b->applyAcceleration(force_vector/b->mass);
+    }
 };
-
-// struct Force {
-//     Force(PhysicalObject* a, float x, float y) {
-//         this->a = a;
-//         this->x = x; this->y = y;
-//     }
-//     PhysicalObject* a;
-//     float x, y;
-// };
 
 struct Scene {
     Scene(sf::Vector2f gravity = sf::Vector2f(0, 0), float air_resistance = 0.f, bool elastic_collisions = true) {
         this->gravity = gravity;
         this->air_resistance = air_resistance;
-        this->elastic_collisions = elastic_collisions;
     }
-    std::vector<PhysicalObject*> objects;
+    std::vector<PObject*> objects;
     std::vector<Spring*> springs;
-    // std::vector<Force*> forces;
     sf::Vector2f gravity;
     float air_resistance;
-    bool elastic_collisions;
-
-    void applyConstraint() {
-        const sf::Vector2f bposition(500, 500); const float bradius = 400;
-        for (int i = 0; i < objects.size(); i++) {
-            if (objects[i]->is_static) continue;
-            sf::Vector2f distance = objects[i]->position - bposition;
-            float distance_length = sqrt(distance.x * distance.x + distance.y * distance.y);
-            if (distance_length > bradius - objects[i]->radius) {
-                sf::Vector2f normal = distance / distance_length;
-                objects[i]->position = bposition + normal * (bradius - objects[i]->radius);
-            }
-        }
-    }
-
-    void solveCollisions() {
-        for (int i = 0; i < objects.size(); i++) for (int j = i+1; j < objects.size(); j++) {
-                if (objects[i]->is_static && objects[j]->is_static) continue;
-                float distance = sqrt(pow(objects[i]->position.x - objects[j]->position.x, 2) + pow(objects[i]->position.y - objects[j]->position.y, 2));
-                if (distance < objects[i]->radius + objects[j]->radius) {
-                    const sf::Vector2f normal = (objects[i]->position - objects[j]->position) / distance;
-                    const sf::Vector2f delta = normal * (objects[i]->radius + objects[j]->radius - distance) * 0.5f;
-                    objects[i]->position += delta; objects[j]->position -= delta;
-                }
-        }
-    }
     
-    void solveElasticCollisions() {
+    void CollisionHandler() {
         for (int i = 0; i < objects.size(); i++) for (int j = i+1; j < objects.size(); j++) {
-                if (objects[i]->is_static && objects[j]->is_static) continue;
-                float sqdist = pow(objects[i]->position.x - objects[j]->position.x, 2) + pow(objects[i]->position.y - objects[j]->position.y, 2);
-                if (sqdist < pow(objects[i]->radius + objects[j]->radius, 2)) {
-                    const float mass_sum = objects[i]->mass + objects[j]->mass;
-                    const sf::Vector2f posdiff = objects[i]->position - objects[j]->position;
-                    const sf::Vector2f veldiff = objects[i]->velocity - objects[j]->velocity;
-                    const float dot = posdiff.x*veldiff.x + posdiff.y*veldiff.y;
-                    objects[i]->velocity -= 2*objects[j]->mass*dot*posdiff/(mass_sum*sqdist);
-                    objects[j]->velocity += 2*objects[i]->mass*dot*posdiff/(mass_sum*sqdist);
-
-                    const float distance = sqrt(sqdist);
-                    const sf::Vector2f delta = posdiff/distance*(objects[i]->radius + objects[j]->radius - distance)*0.5f;
-                    objects[i]->position += delta; objects[j]->position -= delta;
-                }
+                // if (objects[i]->group != objects[j]->group) {
+                    if (objects[i]->getType() == CIRCLE && objects[j]->getType() == CIRCLE) CCTest((PCircle*)objects[i], (PCircle*)objects[j]);
+                    // else if (objects[i]->getType() == CIRCLE && objects[j]->getType() == BOX) CBTest((PCircle*)objects[i], (PBox*)objects[j]);
+                    // else if (objects[i]->getType() == BOX && objects[j]->getType() == CIRCLE) CBTest((PCircle*)objects[j], (PBox*)objects[i]);
+                    // else if (objects[i]->getType() == BOX && objects[j]->getType() == BOX) BBTest((PBox*)objects[i], (PBox*)objects[j]);
+                // }
         }
+    }
+
+    void CCTest(PCircle* a, PCircle* b) {
+        if (a->is_static && b->is_static) return;
+        float sqdist = pow(a->position.x - b->position.x, 2) + pow(a->position.y - b->position.y, 2);
+        if (sqdist < pow(a->radius + b->radius, 2)) elasticCollision(a, b, sqdist);
+    }
+
+    void elasticCollision(PCircle* a, PCircle* b, float& sqdist) {
+        const sf::Vector2f posdiff = a->position - b->position, veldiff = a->velocity - b->velocity;
+        const float mass_sum = a->mass + b->mass, distance = sqrt(sqdist), dot = posdiff.x*veldiff.x + posdiff.y*veldiff.y;
+        const sf::Vector2f delta = posdiff/distance*(a->radius + b->radius - distance)*0.5f;
+        a->velocity -= 2*b->mass*dot*posdiff/(mass_sum*sqdist); b->velocity += 2*a->mass*dot*posdiff/(mass_sum*sqdist);
+        a->position += delta; b->position -= delta;
     }
 
     void update(float dt) {
         for (int i = 0; i < objects.size(); i++) objects[i]->updateObject(dt);
-        for (int i = 0; i < springs.size(); i++) {
-            sf::Vector2f distance = springs[i]->b->position - springs[i]->a->position;
-            float distance_length = sqrt(distance.x*distance.x + distance.y*distance.y);
-            float force = springs[i]->spring_constant*(distance_length - springs[i]->a->radius - springs[i]->b->radius);
-            sf::Vector2f force_vector = distance/distance_length*force;
-            springs[i]->a->applyAcceleration(force_vector);
-            springs[i]->b->applyAcceleration(-force_vector);
-        }
-        for (int i = 0; i < objects.size(); i++)
-            objects[i]->applyAcceleration(gravity - air_resistance*objects[i]->velocity);
-        if (elastic_collisions) solveElasticCollisions(); else solveCollisions(); // applyConstraint();
+        for (int i = 0; i < springs.size(); i++) springs[i]->updateSpring(dt);
+        for (int i = 0; i < objects.size(); i++) objects[i]->applyAcceleration(gravity - air_resistance*objects[i]->velocity);
+        CollisionHandler();
     }
 
     void draw(sf::RenderWindow& window) {
-        for (int i = 0; i < objects.size(); i++) window.draw(*objects[i]); //objects[i]->draw(&window);
+        for (int i = 0; i < objects.size(); i++) objects[i]->draw(window, sf::RenderStates::Default); // window.draw(*objects[i], sf::RenderStates::Default);
         for (int i = 0; i < springs.size(); i++) window.draw(*springs[i]); //springs[i]->draw(&window);
     }
 };
 
 int main() {
     sf::Clock clock;
-
-    sf::Style style;
-    style.resize = sf::Style::Resize;
-    style.close = sf::Style::Close;
-    style.titlebar = sf::Style::Titlebar;
-    style.fullscreen = sf::Style::Fullscreen;
-    // style.maximize = sf::Style::Maximize;
-    // style.sizeable = sf::Style::Sizeable;
-    style.none = sf::Style::None;
-
-    sf::ContextSettings settings;
-    settings.antialiasingLevel = 8;
-    sf::RenderWindow window(sf::VideoMode(1000, 1000), "pure chaos", sf::Style::Default, settings);
+    sf::ContextSettings settings; settings.antialiasingLevel = 8;
+    sf::RenderWindow window(sf::VideoMode(1000, 1000), "pure chaos", sf::Style::None, settings);
     // window.setFramerateLimit(60); // window.setMouseCursorVisible(false);
     
     sf::Font font; sf::Text text;
@@ -187,14 +190,14 @@ int main() {
     text.setFont(font); text.setCharacterSize(20); text.setPosition(5, 5);
     
     Scene scene(sf::Vector2f(0, 50), 1.f);
-    scene.elastic_collisions = true;
     for (int i = 0; i < 15; i++) for (int j = 0; j < 15; j++) {
-		scene.objects.push_back(new PhysicalObject(250 + i*20, 250 + j*20, 9, 250));
-		scene.objects.back()->velocity = sf::Vector2f(rand()%1000 - 500, rand()%1000 - 500);
+		scene.objects.push_back(new PCircle(250 + i*30, 250 + j*30, 9, 250));
+		scene.objects.back()->velocity = sf::Vector2f(rand()%100 - 50, rand()%100 - 50);
 	}
-	scene.objects.push_back(new PhysicalObject(500, 500, 100, 1e10, true));
+    // scene.objects.push_back(new PCircle(500.f, 10000.f, 10200.f, 10000.f, true));
 
-    for (int i = 0; i < 10; i++) scene.springs.push_back(new Spring(scene.objects[i], scene.objects[i+1], 100, 0.1f));
+    for (int i = 0; i < 224; i++) if (i%15 != 14) scene.springs.push_back(new Spring(scene.objects[i], scene.objects[i+1], 10, 0.1f));
+    for (int i = 0; i < 210; i++) scene.springs.push_back(new Spring(scene.objects[i], scene.objects[i+15], 10, 0.1f));
 
     bool spacepressed = false;
     while (window.isOpen()) {
@@ -202,7 +205,7 @@ int main() {
         while (window.pollEvent(event))
             if (event.type == sf::Event::Closed || (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Escape)) window.close();
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space) && !spacepressed) {
-            scene.objects.push_back(new PhysicalObject(rand() % 1000, rand() % 1000, rand() % 100 + 10));
+            scene.objects.push_back(new PCircle(rand() % 1000, rand() % 1000, rand() % 100 + 10));
             spacepressed = true;
         } else if (!sf::Keyboard::isKeyPressed(sf::Keyboard::Space)) spacepressed = false;
 
