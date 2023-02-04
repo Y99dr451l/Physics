@@ -124,7 +124,7 @@ struct Spring : sf::Drawable {
     void updateSpring(float dt) {
         sf::Vector2f delta = b->position - a->position;
         float distance = sqrt(delta.x*delta.x + delta.y*delta.y);
-        float force = spring_constant*distance;
+        float force = -spring_constant*distance;
         sf::Vector2f force_vector = force*delta/distance;
         a->applyAcceleration(-force_vector/a->mass);
         b->applyAcceleration(force_vector/b->mass);
@@ -189,15 +189,15 @@ int main() {
     font.loadFromFile("Lavinia.otf");
     text.setFont(font); text.setCharacterSize(20); text.setPosition(5, 5);
     
-    Scene scene(sf::Vector2f(0, 50), 1.f);
+    Scene scene(sf::Vector2f(0, 0), 0.1f);
     for (int i = 0; i < 15; i++) for (int j = 0; j < 15; j++) {
 		scene.objects.push_back(new PCircle(250 + i*30, 250 + j*30, 9, 250));
 		scene.objects.back()->velocity = sf::Vector2f(rand()%100 - 50, rand()%100 - 50);
 	}
     // scene.objects.push_back(new PCircle(500.f, 10000.f, 10200.f, 10000.f, true));
 
-    for (int i = 0; i < 224; i++) if (i%15 != 14) scene.springs.push_back(new Spring(scene.objects[i], scene.objects[i+1], 10, 0.1f));
-    for (int i = 0; i < 210; i++) scene.springs.push_back(new Spring(scene.objects[i], scene.objects[i+15], 10, 0.1f));
+    for (int i = 0; i < 224; i++) if (i%15 != 14) scene.springs.push_back(new Spring(scene.objects[i], scene.objects[i+1], 1000, 0.1f));
+    for (int i = 0; i < 210; i++) scene.springs.push_back(new Spring(scene.objects[i], scene.objects[i+15], 1000, 0.1f));
 
     bool spacepressed = false;
     while (window.isOpen()) {
